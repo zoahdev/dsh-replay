@@ -1,7 +1,7 @@
 {
   "name": "dsh-replay",
-  "version": "0.1.0",
-  "description": "Time-travel debugger for DeepSeek Harness agents: replay, visualize, and diff a session's full trajectory from session.jsonl.zstd.",
+  "version": "0.2.0",
+  "description": "Time-travel debugger for DeepSeek Harness agents: replay, visualize, and diff a session's full trajectory from session.jsonl.zstd, plus a broken-tool-call health check.",
   "type": "module",
   "bin": {
     "dsh-replay": "bin/replay.mjs"
