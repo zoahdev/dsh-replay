@@ -1,5 +1,7 @@
 # dsh-replay — time-travel debugger for DeepSeek Harness agents
 
+[![npm](https://img.shields.io/npm/v/dsh-replay)](https://www.npmjs.com/package/dsh-replay)
+
 Replay, visualize, and diff a DeepSeek Harness session's **full trajectory** straight from `session.jsonl.zstd` — the ground-truth event log. No `@deepseek-ai/dsh` dependency; just Node ≥ 22.19 (its bundled zstd).
 
 ![dsh-replay rendered timeline](assets/replay.png)
@@ -19,6 +21,9 @@ Debugging an agent by scrolling the terminal only shows the last N lines. dsh's 
 ## Install / run
 
 ```sh
+# from npm
+npx dsh-replay <session-id> --out replay.html
+# or from source
 node bin/replay.mjs <session-id> --out replay.html
 # or point at a file directly
 node bin/replay.mjs --file ~/.dsh/sessions/.../session.jsonl.zstd
