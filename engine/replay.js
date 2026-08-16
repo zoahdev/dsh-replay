@@ -226,6 +226,7 @@ export function analyze(turns, header) {
     steps: steps.length,
     toolCalls: calls.length,
     errors: calls.filter(c => c.result?.isError === true).length,
+    brokenCalls: calls.filter(c => c.result === undefined).length,
     tools: Object.entries(byTool).sort((a, b) => b[1] - a[1]).slice(0, 12),
     maxToolMs: durations.length > 0 ? Math.round(Math.max(...durations)) : 0,
     meanToolMs: durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
@@ -290,6 +291,7 @@ export function renderHtml({ header, turns }, stats = analyze(turns, header)) {
     <div class="card"><span class="k">steps</span><span class="v">${stats.steps}</span></div>
     <div class="card"><span class="k">tool calls</span><span class="v">${stats.toolCalls}</span></div>
     <div class="card"><span class="k">errors</span><span class="v ${stats.errors > 0 ? 'bad' : ''}">${stats.errors}</span></div>
+    <div class="card"><span class="k">broken</span><span class="v ${stats.brokenCalls > 0 ? 'bad' : ''}">${stats.brokenCalls}</span></div>
     <div class="card"><span class="k">mean tool</span><span class="v">${stats.meanToolMs}ms</span></div>
     <div class="card"><span class="k">max tool</span><span class="v">${stats.maxToolMs}ms</span></div>
   </section>
