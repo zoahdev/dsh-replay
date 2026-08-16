@@ -11,6 +11,7 @@ Usage:
   dsh-replay --file <session.jsonl.zstd> [--out replay.html]
   dsh-replay diff <id-a> <id-b> [--root ~/.dsh/sessions]
   dsh-replay <session-id> --stats             print turn/tool/error summary as JSON
+  dsh-replay <session-id> --health            print broken-tool-call health check
 
 Options:
   --root <dir>    sessions root (default: $DSH_HOME/sessions or ~/.dsh/sessions)
@@ -101,6 +102,12 @@ if (!id) usage()
 
 const { file, header, events } = load(id)
 const turns = reconstruct(events)
+if (args.includes('--health')) {
+  const stats = analyze(turns, header)
+  const status = stats.brokenCalls > 0 ? 'UNHEALTHY' : 'HEALTHY'
+  process.stdout.write(`${status}: ${stats.brokenCalls} broken tool call(s), ${stats.errors} error(s), ${stats.toolCalls} total tool call(s)\n`)
+  process.exit(stats.brokenCalls > 0 ? 1 : 0)
+}
 if (args.includes('--stats')) {
   process.stdout.write(JSON.stringify(analyze(turns, header), null, 2) + '\n')
   process.exit(0)
