@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { decodeSession, reconstruct, renderHtml, diffTrajectories } from '../engine/replay.js'
+import { decodeSession, reconstruct, renderHtml, diffTrajectories, analyze } from '../engine/replay.js'
 
 test('decodes a plain JSONL session with a packed chunk row', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-replay-'))
@@ -74,4 +74,25 @@ test('diffTrajectories summarizes per-turn tool calls', () => {
   assert.equal(rows.length, 1)
   assert.deepEqual(rows[0].a.calls, ['bash'])
   assert.deepEqual(rows[0].b.calls, ['fs_write'])
+})
+
+test('analyze counts broken tool calls (declared without a paired result)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-replay-'))
+  const file = join(dir, 'session.jsonl')
+  try {
+    writeFileSync(file, [
+      JSON.stringify({ type: 'session', version: 0, id: 's3', cwd: '/w', createdAt: 0 }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', seq: 1, time: 1, data: { turn: 1, step: 1 } }),
+      // declared tool call with NO matching tool/result -> broken sequence (#2334)
+      JSON.stringify({ type: 'assistant/message', seq: 2, time: 2, data: { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', callId: 'c1', name: 'read', arguments: '{}' }] } } }),
+      '',
+    ].join('\n'))
+    const { header, events } = decodeSession(file)
+    const stats = analyze(reconstruct(events), header)
+    assert.equal(stats.brokenCalls, 1)
+    assert.equal(stats.toolCalls, 1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
