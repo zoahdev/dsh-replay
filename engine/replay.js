@@ -191,6 +191,11 @@ export function reconstruct(events) {
           })
         }
       }
+    } else if (type === 'tool/call') {
+      ensureTurn(data.turn)
+      ensureStep(data.step)
+      const call = step.toolCalls.find(c => c.callId === data.callId)
+      if (call) call.time = event.time
     } else if (type === 'tool/result') {
       ensureTurn(data.turn)
       ensureStep(data.step)
@@ -199,10 +204,32 @@ export function reconstruct(events) {
       const isError = resultContent[0]?.isError === true || resultContent[0]?.content?.[0]?.isError === true
       const text = textOf(resultContent[0]?.content) || textOf(resultContent)
       const call = step.toolCalls.find(c => c.callId === callId) ?? step.toolCalls.at(-1)
-      if (call) call.result = { text, isError }
+      if (call) {
+        call.result = { text, isError }
+        if (call.time !== undefined) call.durationMs = event.time - call.time
+      }
     }
   }
   return turns
+}
+
+/** Aggregate stats for a reconstructed trajectory. */
+export function analyze(turns, header) {
+  const steps = turns.flatMap(t => t.steps)
+  const calls = steps.flatMap(s => s.toolCalls)
+  const byTool = {}
+  for (const call of calls) byTool[call.name] = (byTool[call.name] ?? 0) + 1
+  const durations = calls.filter(c => c.durationMs !== undefined).map(c => c.durationMs)
+  return {
+    title: header?.title ?? header?.id,
+    turns: turns.length,
+    steps: steps.length,
+    toolCalls: calls.length,
+    errors: calls.filter(c => c.result?.isError === true).length,
+    tools: Object.entries(byTool).sort((a, b) => b[1] - a[1]).slice(0, 12),
+    maxToolMs: durations.length > 0 ? Math.round(Math.max(...durations)) : 0,
+    meanToolMs: durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+  }
 }
 
 function esc(value) {
@@ -222,7 +249,7 @@ function renderToolArgs(args) {
 }
 
 /** Render the trajectory to a self-contained HTML document. */
-export function renderHtml({ header, turns }) {
+export function renderHtml({ header, turns }, stats = analyze(turns, header)) {
   const title = header?.title || header?.id || 'session'
   const meta = [
     ['id', header?.id],
@@ -244,15 +271,29 @@ export function renderHtml({ header, turns }) {
         `<div class="user"><div class="tag">user</div><pre>${esc(m.text)}</pre></div>`).join('')
       const tools = s.toolCalls.map(c => {
         const r = c.result
+        const duration = c.durationMs !== undefined ? `<span class="dur">${c.durationMs}ms</span>` : ''
         const result = r
           ? `<div class="result ${r.isError ? 'err' : 'ok'}"><div class="tag">${r.isError ? 'error' : 'ok'}</div><pre>${esc(r.text)}</pre></div>`
           : ''
-        return `<div class="tool"><div class="call"><span class="fn">${esc(c.name)}</span>${renderToolArgs(c.arguments)}</div>${result}</div>`
+        return `<div class="tool"><div class="call"><span class="fn">${esc(c.name)}</span>${duration}${renderToolArgs(c.arguments)}</div>${result}</div>`
       }).join('')
       return `<section class="step"><div class="step-head">step ${esc(s.step)}</div>${users}${reasoning}${text}${tools}</section>`
     }).join('')
     return `<section class="turn"><h3>turn ${esc(t.turn)}</h3>${stepsHtml}</section>`
   }).join('')
+
+  const toolCounts = stats.tools.map(([name, count]) =>
+    `<span class="chip"><code>${esc(name)}</code> ×${count}</span>`).join('')
+  const statsHtml = `
+  <section class="stats">
+    <div class="card"><span class="k">turns</span><span class="v">${stats.turns}</span></div>
+    <div class="card"><span class="k">steps</span><span class="v">${stats.steps}</span></div>
+    <div class="card"><span class="k">tool calls</span><span class="v">${stats.toolCalls}</span></div>
+    <div class="card"><span class="k">errors</span><span class="v ${stats.errors > 0 ? 'bad' : ''}">${stats.errors}</span></div>
+    <div class="card"><span class="k">mean tool</span><span class="v">${stats.meanToolMs}ms</span></div>
+    <div class="card"><span class="k">max tool</span><span class="v">${stats.maxToolMs}ms</span></div>
+  </section>
+  <section class="tools">${toolCounts}</section>`
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -264,6 +305,13 @@ export function renderHtml({ header, turns }) {
   h1 { margin:0 0 8px; font-size:18px; font-weight:600; }
   .meta { display:inline-block; margin-right:16px; font-size:12px; color:#8b949e; }
   .meta code { margin-left:6px; color:#e6edf3; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin-bottom:16px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:10px 12px; }
+  .card .k { display:block; font-size:11px; color:#8b949e; text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:20px; font-weight:600; color:#e6edf3; }
+  .card .v.bad { color:#f85149; }
+  .tools { margin-bottom:16px; }
+  .chip { display:inline-block; margin:0 6px 6px 0; padding:3px 8px; background:#21262d; border:1px solid #30363d; border-radius:12px; font-size:12px; color:#e6edf3; }
   main { max-width:980px; margin:0 auto; padding:24px; }
   .turn { margin-bottom:24px; }
   h3 { margin:0 0 8px; font-size:15px; color:#58a6ff; }
@@ -280,13 +328,14 @@ export function renderHtml({ header, turns }) {
   .tool { margin:10px 0; border:1px solid #30363d; border-radius:6px; }
   .call { padding:8px 10px; }
   .fn { font:600 13px ui-monospace,Menlo,monospace; color:#d2a8ff; display:block; margin-bottom:4px; }
+  .dur { font-size:11px; color:#8b949e; float:right; }
   .result { padding:8px 10px; border-top:1px solid #30363d; }
   .result.ok { background:#0f2a1a; } .result.err { background:#2a1515; }
   .result .tag { font-size:10px; }
   .result.ok .tag { background:#238636; color:#fff; } .result.err .tag { background:#da3633; color:#fff; }
 </style></head><body>
 <header><h1>${esc(title)}</h1>${meta}</header>
-<main>${turnHtml}</main>
+<main>${statsHtml}${turnHtml}</main>
 </body></html>\n`
 }
 
@@ -297,11 +346,7 @@ export function diffTrajectories(a, b) {
   for (let i = 0; i < max; i++) {
     const ta = a[i]
     const tb = b[i]
-    rows.push({
-      turn: i + 1,
-      a: ta ? summarizeTurn(ta) : null,
-      b: tb ? summarizeTurn(tb) : null,
-    })
+    rows.push({ turn: i + 1, a: ta ? summarizeTurn(ta) : null, b: tb ? summarizeTurn(tb) : null })
   }
   return rows
 }
@@ -310,4 +355,35 @@ function summarizeTurn(t) {
   const calls = t.steps.flatMap(s => s.toolCalls.map(c => c.name))
   const text = t.steps.map(s => s.text.trim()).filter(Boolean).join('\n')
   return { calls, text }
+}
+
+/** Render a side-by-side HTML diff of two trajectories. */
+export function renderDiffHtml(a, b, aName = 'A', bName = 'B') {
+  const rows = diffTrajectories(a, b)
+  const max = Math.max(a.length, b.length)
+  const body = []
+  for (let i = 0; i < max; i++) {
+    const ta = a[i]
+    const tb = b[i]
+    const same = ta && tb && JSON.stringify(ta.steps.flatMap(s => s.toolCalls.map(c => c.name)))
+      === JSON.stringify(tb.steps.flatMap(s => s.toolCalls.map(c => c.name)))
+    const cls = same ? 'same' : 'diff'
+    body.push(`<tr class="${cls}"><td>turn ${i + 1}</td>`)
+    body.push(`<td>${ta ? ta.steps.flatMap(s => s.toolCalls.map(c => esc(c.name))).join('<br>') || '—' : '—'}</td>`)
+    body.push(`<td>${tb ? tb.steps.flatMap(s => s.toolCalls.map(c => esc(c.name))).join('<br>') || '—' : '—'}</td></tr>`)
+  }
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>diff · dsh-replay</title>
+<style>
+  :root{color-scheme:dark} body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:#0d1117;color:#e6edf3}
+  header{padding:20px 24px;border-bottom:1px solid #30363d;background:#161b22}
+  h1{margin:0;font-size:18px} table{width:100%;border-collapse:collapse;max-width:980px;margin:24px auto}
+  th,td{padding:8px 12px;border:1px solid #30363d;text-align:left;vertical-align:top}
+  th{background:#161b22;color:#8b949e;font-size:12px;text-transform:uppercase}
+  tr.diff td{background:#2a1515} tr.same td{background:#0f2a1a}
+</style></head><body>
+<header><h1>trajectory diff · ${esc(aName)} vs ${esc(bName)}</h1></header>
+<table><thead><tr><th>turn</th><th>${esc(aName)}</th><th>${esc(bName)}</th></tr></thead><tbody>${body.join('')}</tbody></table>
+</body></html>\n`
 }
