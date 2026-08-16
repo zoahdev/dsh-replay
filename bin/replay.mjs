@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { decodeSession, reconstruct, renderHtml, diffTrajectories } from '../engine/replay.js'
+import { decodeSession, reconstruct, renderHtml, renderDiffHtml, diffTrajectories } from '../engine/replay.js'
 
 function usage() {
   process.stderr.write(`dsh-replay — time-travel debugger for DeepSeek Harness sessions
@@ -76,10 +76,17 @@ function write(out, html) {
 }
 
 if (args[0] === 'diff') {
-  const [, , idA, idB] = args
+  const [, idA, idB] = args
   if (!idA || !idB) usage()
-  const a = reconstruct(load(idA).events)
-  const b = reconstruct(load(idB).events)
+  const aRec = load(idA)
+  const bRec = load(idB)
+  const a = reconstruct(aRec.events)
+  const b = reconstruct(bRec.events)
+  if (argv.out || args.includes('--diff-html')) {
+    const out = argv.out ?? 'replay-diff.html'
+    write(out, renderDiffHtml(a, b, idA, idB))
+    process.exit(0)
+  }
   const rows = diffTrajectories(a, b)
   for (const row of rows) {
     const fmt = (side) => side === null ? '(missing)' : `[${side.calls.join(', ')}]`
