@@ -2,6 +2,8 @@
 
 Replay, visualize, and diff a DeepSeek Harness session's **full trajectory** straight from `session.jsonl.zstd` — the ground-truth event log. No `@deepseek-ai/dsh` dependency; just Node ≥ 22.19 (its bundled zstd).
 
+![dsh-replay rendered timeline](assets/replay.png)
+
 ## Why
 
 Debugging an agent by scrolling the terminal only shows the last N lines. dsh's session log already contains everything — every reasoning delta, every tool call, every result, with seq + timestamps — but it's a concatenated-zstd, packed-row format nobody can read by hand. dsh-replay decodes that format and renders it as a readable timeline.
@@ -12,6 +14,7 @@ Debugging an agent by scrolling the terminal only shows the last N lines. dsh's 
 - **Reconstruct** turns → steps → user messages → reasoning → assistant text → tool calls with results (success/error).
 - **Render** a self-contained dark-mode HTML timeline.
 - **Diff** two sessions turn-by-turn (where did the two runs diverge?).
+- **Summarize** per-tool call counts, error count, and latency as JSON (`--stats`).
 
 ## Install / run
 
@@ -19,8 +22,12 @@ Debugging an agent by scrolling the terminal only shows the last N lines. dsh's 
 node bin/replay.mjs <session-id> --out replay.html
 # or point at a file directly
 node bin/replay.mjs --file ~/.dsh/sessions/.../session.jsonl.zstd
+# print a turn/tool/error summary as JSON
+node bin/replay.mjs <session-id> --stats
 # compare two runs
 node bin/replay.mjs diff <id-a> <id-b>
+# compare two runs and render a side-by-side HTML diff
+node bin/replay.mjs diff <id-a> <id-b> --diff-html
 ```
 
 Open `replay.html` in any browser.

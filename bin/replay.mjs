@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { decodeSession, reconstruct, renderHtml, renderDiffHtml, diffTrajectories } from '../engine/replay.js'
+import { decodeSession, reconstruct, renderHtml, renderDiffHtml, diffTrajectories, analyze } from '../engine/replay.js'
 
 function usage() {
   process.stderr.write(`dsh-replay — time-travel debugger for DeepSeek Harness sessions
@@ -10,6 +10,7 @@ Usage:
   dsh-replay <session-id> [--out replay.html]   render a session's full trajectory
   dsh-replay --file <session.jsonl.zstd> [--out replay.html]
   dsh-replay diff <id-a> <id-b> [--root ~/.dsh/sessions]
+  dsh-replay <session-id> --stats             print turn/tool/error summary as JSON
 
 Options:
   --root <dir>    sessions root (default: $DSH_HOME/sessions or ~/.dsh/sessions)
@@ -100,5 +101,9 @@ if (!id) usage()
 
 const { file, header, events } = load(id)
 const turns = reconstruct(events)
+if (args.includes('--stats')) {
+  process.stdout.write(JSON.stringify(analyze(turns, header), null, 2) + '\n')
+  process.exit(0)
+}
 const out = argv.out ?? `${(header?.id ?? id).replaceAll(':', '-')}.replay.html`
 write(out, renderHtml({ header, turns }))
